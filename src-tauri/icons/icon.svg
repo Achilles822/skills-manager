@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FF8A5C"/>
+      <stop offset="100%" stop-color="#E8534A"/>
+    </linearGradient>
+    <linearGradient id="shine" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="rgba(255,255,255,0.25)"/>
+      <stop offset="50%" stop-color="rgba(255,255,255,0)"/>
+    </linearGradient>
+  </defs>
+  <!-- Rounded square background -->
+  <rect x="32" y="32" width="960" height="960" rx="208" ry="208" fill="url(#bg)"/>
+  <!-- Subtle glass shine -->
+  <rect x="32" y="32" width="960" height="960" rx="208" ry="208" fill="url(#shine)"/>
+  <!-- Letter S -->
+  <text x="512" y="620" text-anchor="middle" font-family="system-ui, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="560" font-weight="800" fill="#FFFFFF" letter-spacing="-20">S</text>
+  <!-- Small sparkle top-right -->
+  <g transform="translate(740, 220)" fill="#FFFFFF" opacity="0.9">
+    <path d="M0,-40 L8,-8 L40,0 L8,8 L0,40 L-8,8 L-40,0 L-8,-8 Z"/>
+  </g>
+  <!-- Tiny sparkle -->
+  <g transform="translate(800, 310) scale(0.5)" fill="#FFFFFF" opacity="0.6">
+    <path d="M0,-40 L8,-8 L40,0 L8,8 L0,40 L-8,8 L-40,0 L-8,-8 Z"/>
+  </g>
+</svg>
