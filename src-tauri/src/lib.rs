@@ -25,6 +25,9 @@ pub fn run() {
             commands::uninstall_skill,
             commands::save_skill_content,
             commands::open_in_explorer,
+            commands::list_skill_files,
+            commands::read_file_content,
+            commands::save_file_content,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

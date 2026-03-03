@@ -1,7 +1,10 @@
 <script setup lang="ts">
 import { computed } from "vue"
+import { useI18n } from "vue-i18n"
 import SkillListItem from "@/components/SkillListItem.vue"
 import type { Skill } from "@/types"
+
+const { t } = useI18n()
 
 const props = defineProps<{
   skills: Skill[]
@@ -22,10 +25,10 @@ const isEmpty = computed(() => !props.loading && props.skills.length === 0)
   <div class="skill-list">
     <div v-if="loading" class="skill-list__status">
       <span class="skill-list__spinner" aria-hidden="true" />
-      <span>正在加载 Skills…</span>
+      <span>{{ t('skill.loadingSkills') }}</span>
     </div>
     <div v-else-if="isEmpty" class="skill-list__status">
-      <p>未发现已安装的 Skills</p>
+      <p>{{ t('skill.noSkillsFound') }}</p>
     </div>
     <div v-else class="skill-list__scroll">
       <SkillListItem

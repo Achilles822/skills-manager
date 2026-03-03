@@ -1,7 +1,10 @@
 <script setup lang="ts">
 import { computed } from "vue"
+import { useI18n } from "vue-i18n"
 import NeuSelect from "@/components/NeuSelect.vue"
 import type { EditorInfo } from "@/types"
+
+const { t } = useI18n()
 
 const props = defineProps<{
   editors: EditorInfo[]
@@ -13,7 +16,7 @@ const emit = defineEmits<{
 }>()
 
 const options = computed(() => {
-  const allOption = { id: "all", label: "全部" }
+  const allOption = { id: "all", label: t('filter.all') }
   const editorOptions = props.editors
     .filter((e) => e.installed)
     .map((e) => ({ id: e.id, label: e.display_name }))
@@ -23,7 +26,7 @@ const options = computed(() => {
 
 <template>
   <div class="editor-filter">
-    <label class="editor-filter__label">编辑器</label>
+    <label class="editor-filter__label">{{ t('filter.editor') }}</label>
     <NeuSelect
       :options="options"
       :model-value="selectedEditorIds"

@@ -1,5 +1,10 @@
 <script setup lang="ts">
+import { computed } from "vue"
+import { useI18n } from "vue-i18n"
+
 export type StatusFilterValue = "all" | "enabled" | "disabled"
+
+const { t } = useI18n()
 
 defineProps<{
   modelValue: StatusFilterValue
@@ -9,16 +14,16 @@ const emit = defineEmits<{
   "update:modelValue": [value: StatusFilterValue]
 }>()
 
-const options: { id: StatusFilterValue; label: string }[] = [
-  { id: "all", label: "全部" },
-  { id: "enabled", label: "应用中" },
-  { id: "disabled", label: "已禁用" },
-]
+const options = computed<{ id: StatusFilterValue; label: string }[]>(() => [
+  { id: "all", label: t('filter.all') },
+  { id: "enabled", label: t('filter.enabled') },
+  { id: "disabled", label: t('filter.disabled') },
+])
 </script>
 
 <template>
   <div class="status-filter">
-    <label class="status-filter__label">状态</label>
+    <label class="status-filter__label">{{ t('filter.status') }}</label>
     <div class="status-filter__pills">
       <button
         v-for="opt in options"

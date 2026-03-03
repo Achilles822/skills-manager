@@ -5,7 +5,8 @@ use crate::toggle::{
     uninstall_skill_center, uninstall_skill_copy, SkillLockManager,
 };
 use crate::platform::home_dir;
-use std::path::PathBuf;
+use serde::Serialize;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tauri::State;
 
@@ -39,6 +40,9 @@ pub async fn list_skills(
             .into_iter()
             .filter(|s| {
                 if !s.enabled {
+                    return true;
+                }
+                if s.id.starts_with("center:") && s.editors.is_empty() {
                     return true;
                 }
                 s.editors.iter().any(|e| ids.contains(e))
@@ -188,6 +192,115 @@ pub async fn open_in_explorer(path: String) -> Result<(), String> {
             .status()
             .map_err(|e| format!("Failed to open file manager: {}", e))?;
     }
+
+    Ok(())
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct FileEntry {
+    pub name: String,
+    pub path: String,
+    pub is_dir: bool,
+    pub children: Option<Vec<FileEntry>>,
+}
+
+fn scan_dir_recursive(dir: &Path) -> Vec<FileEntry> {
+    let mut entries = Vec::new();
+    let Ok(read_dir) = std::fs::read_dir(dir) else {
+        return entries;
+    };
+
+    let mut items: Vec<_> = read_dir.flatten().collect();
+    items.sort_by(|a, b| {
+        let a_is_dir = a.path().is_dir();
+        let b_is_dir = b.path().is_dir();
+        b_is_dir.cmp(&a_is_dir).then_with(|| {
+            a.file_name()
+                .to_string_lossy()
+                .to_lowercase()
+                .cmp(&b.file_name().to_string_lossy().to_lowercase())
+        })
+    });
+
+    for entry in items {
+        let path = entry.path();
+        let name = entry.file_name().to_string_lossy().to_string();
+
+        if name.starts_with('.') || name == "node_modules" {
+            continue;
+        }
+
+        let is_dir = path.is_dir();
+        let children = if is_dir {
+            Some(scan_dir_recursive(&path))
+        } else {
+            None
+        };
+
+        entries.push(FileEntry {
+            name,
+            path: path.to_string_lossy().to_string(),
+            is_dir,
+            children,
+        });
+    }
+
+    entries
+}
+
+#[tauri::command]
+pub async fn list_skill_files(skill_dir: String) -> Result<Vec<FileEntry>, String> {
+    let dir = PathBuf::from(&skill_dir);
+    if !dir.exists() || !dir.is_dir() {
+        return Err("Skill directory does not exist".to_string());
+    }
+    Ok(scan_dir_recursive(&dir))
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct FileContent {
+    pub content: String,
+    pub is_binary: bool,
+}
+
+fn is_binary_content(bytes: &[u8]) -> bool {
+    let check_len = bytes.len().min(8192);
+    bytes[..check_len].iter().any(|&b| b == 0)
+}
+
+#[tauri::command]
+pub async fn read_file_content(file_path: String) -> Result<FileContent, String> {
+    let path = PathBuf::from(&file_path);
+    let bytes = std::fs::read(&path)
+        .map_err(|e| format!("Failed to read file: {}", e))?;
+
+    if is_binary_content(&bytes) {
+        return Ok(FileContent {
+            content: String::new(),
+            is_binary: true,
+        });
+    }
+
+    let content = String::from_utf8_lossy(&bytes).to_string();
+    Ok(FileContent {
+        content,
+        is_binary: false,
+    })
+}
+
+#[tauri::command]
+pub async fn save_file_content(file_path: String, content: String) -> Result<(), String> {
+    let path = PathBuf::from(&file_path);
+    let parent = path.parent().ok_or("Invalid path")?;
+    let temp_path = parent.join(".file_temp");
+
+    std::fs::write(&temp_path, &content)
+        .map_err(|e| format!("Failed to write content: {}", e))?;
+
+    std::fs::rename(&temp_path, &path).map_err(|e| {
+        let _ = std::fs::remove_file(&temp_path);
+        format!("Failed to save file: {}", e)
+    })?;
 
     Ok(())
 }

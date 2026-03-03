@@ -1,4 +1,8 @@
 <script setup lang="ts">
+import { useI18n } from "vue-i18n"
+
+const { t } = useI18n()
+
 defineProps<{
   visible: boolean
   title: string
@@ -25,12 +29,12 @@ const emit = defineEmits<{
             <button
               class="dialog-panel__btn dialog-panel__btn--cancel"
               @click="emit('cancel')"
-            >{{ cancelText || '取消' }}</button>
+            >{{ cancelText || t('confirm.cancel') }}</button>
             <button
               class="dialog-panel__btn"
               :class="danger ? 'dialog-panel__btn--danger' : 'dialog-panel__btn--confirm'"
               @click="emit('confirm')"
-            >{{ confirmText || '确认' }}</button>
+            >{{ confirmText || t('confirm.confirm') }}</button>
           </div>
         </div>
       </div>

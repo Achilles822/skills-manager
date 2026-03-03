@@ -25,6 +25,8 @@
 - 📦 **Centralized skill center** — One copy in `~/.agents/skills/`, symlinked to all editors.
 - 🔀 **One-click toggle** — Enable / disable skills instantly, restore anytime.
 - 📝 **Detail & edit** — View Markdown-rendered docs and edit skill content in-place.
+- 📂 **File explorer** — Browse skill directories with a collapsible tree, view and edit scripts/references/templates with syntax highlighting.
+- 🌐 **Multi-language** — Switch between Simplified Chinese and English from the settings panel.
 - 🗑️ **Uninstall** — Remove skills with automatic cross-editor cleanup.
 - 🎨 **Neumorphic UI** — Soft, modern design built with custom Vue components.
 - 💻 **Cross-platform** — Native on macOS, Windows, and Linux via Tauri v2.

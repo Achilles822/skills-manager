@@ -1,4 +1,8 @@
 <script setup lang="ts">
+import { useI18n } from "vue-i18n"
+
+const { t } = useI18n()
+
 defineProps<{
   visible: boolean
 }>()
@@ -23,16 +27,16 @@ function onOuterClick(e: MouseEvent) {
             <img src="@/assets/app-icon.png" alt="Skills Manager" width="56" height="56" />
           </div>
           <h2 class="about-dialog__title">Skills Manager</h2>
-          <p class="about-dialog__version">v0.1.0</p>
-          <p class="about-dialog__desc">AI 编辑器 Skills 可视化管理工具</p>
+          <p class="about-dialog__version">v0.1.1</p>
+          <p class="about-dialog__desc">{{ t('about.description') }}</p>
           <div class="about-dialog__divider" />
           <dl class="about-dialog__info">
-            <dt>作者</dt>
+            <dt>{{ t('about.author') }}</dt>
             <dd>Leo Yan</dd>
-            <dt>许可证</dt>
+            <dt>{{ t('about.license') }}</dt>
             <dd>MIT</dd>
           </dl>
-          <button class="about-dialog__close" @click="emit('close')">关闭</button>
+          <button class="about-dialog__close" @click="emit('close')">{{ t('about.close') }}</button>
         </div>
       </div>
     </Transition>

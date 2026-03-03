@@ -7,17 +7,21 @@ export function useSkills(selectedEditorIds: Ref<string[]>) {
   const loading = ref(false)
   const selectedSkill = ref<Skill | null>(null)
   const error = ref<string | null>(null)
+  let fetchSeq = 0
 
   async function fetchSkills() {
     loading.value = true
     error.value = null
+    const seq = ++fetchSeq
     try {
-      // editors 为空数组时传 null，让后端返回全部 skills（不按编辑器过滤）
       const editorsParam =
         selectedEditorIds.value.length > 0 ? selectedEditorIds.value : null
       const result = (await invoke("list_skills", {
         editors: editorsParam,
       })) as Skill[]
+
+      if (seq !== fetchSeq) return
+
       skills.value = result
 
       if (selectedSkill.value) {
@@ -25,11 +29,14 @@ export function useSkills(selectedEditorIds: Ref<string[]>) {
         selectedSkill.value = updated ?? null
       }
     } catch (err) {
+      if (seq !== fetchSeq) return
       console.error("Failed to list skills:", err)
       error.value = err instanceof Error ? err.message : "Failed to load skills"
       skills.value = []
     } finally {
-      loading.value = false
+      if (seq === fetchSeq) {
+        loading.value = false
+      }
     }
   }
 
