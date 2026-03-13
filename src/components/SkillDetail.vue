@@ -9,18 +9,18 @@ import SkillFileTree from "@/components/SkillFileTree.vue"
 import FileViewer from "@/components/FileViewer.vue"
 import { useSkillFiles } from "@/composables/useSkillFiles"
 import type { FileEntry } from "@/composables/useSkillFiles"
-import type { Skill } from "@/types"
+import type { Skill, EditorInfo } from "@/types"
 
 const { t } = useI18n()
 
 const props = defineProps<{
   skill: Skill | null
-  togglingSkillIds: Set<string>
-  selectedEditorIds: string[]
+  editors: EditorInfo[]
+  toggling: boolean
 }>()
 
 const emit = defineEmits<{
-  toggle: [skill: Skill]
+  toggleEditor: [editorId: string]
   refresh: []
   uninstall: [skill: Skill]
 }>()
@@ -79,18 +79,35 @@ function requestUninstall() {
   showUninstallConfirm.value = true
 }
 
+const uninstallMessage = computed(() => {
+  if (!props.skill) return ""
+  if (props.skill.is_debug) {
+    return props.skill.debug_status === "abnormal"
+      ? t("skill.uninstallDebugAbnormalMessage", { name: props.skill.meta.name })
+      : t("skill.uninstallDebugMessage", { name: props.skill.meta.name })
+  }
+  return t("skill.uninstallMessage", { name: props.skill.meta.name })
+})
+
 async function confirmUninstall() {
   if (!props.skill) return
   showUninstallConfirm.value = false
   uninstalling.value = true
   try {
-    await invoke("uninstall_skill", {
-      skillId: props.skill.id,
-      dirName: props.skill.dir_name,
-      sourcePath: typeof props.skill.source_path === "string"
-        ? props.skill.source_path
-        : String(props.skill.source_path),
-    })
+    if (props.skill.is_debug) {
+      await invoke("uninstall_debug_skill", {
+        dirName: props.skill.dir_name,
+        debugStatus: props.skill.debug_status || "abnormal",
+      })
+    } else {
+      await invoke("uninstall_skill", {
+        skillId: props.skill.id,
+        dirName: props.skill.dir_name,
+        sourcePath: typeof props.skill.source_path === "string"
+          ? props.skill.source_path
+          : String(props.skill.source_path),
+      })
+    }
     emit("uninstall", props.skill)
   } catch (err) {
     console.error("Failed to uninstall skill:", err)
@@ -112,6 +129,8 @@ async function openInExplorer() {
 }
 
 const showTree = computed(() => hasMultipleFiles.value && !treeCollapsed.value)
+const isCenterSkill = computed(() => props.skill?.id.startsWith("center:") ?? false)
+const installedEditors = computed(() => props.editors.filter((e) => e.installed))
 </script>
 
 <template>
@@ -125,11 +144,6 @@ const showTree = computed(() => hasMultipleFiles.value && !treeCollapsed.value)
         <div class="detail__title-left">
           <h2 class="detail__name">{{ skill.meta.name }}</h2>
           <NeuTag :variant="isSymlink ? 'symlink' : 'copy'" />
-          <NeuToggle
-            :model-value="skill.enabled"
-            :loading="togglingSkillIds.has(skill.id)"
-            @update:model-value="emit('toggle', skill)"
-          />
         </div>
         <div class="detail__toolbar">
           <button class="detail__tool-btn" :title="t('skill.openFolder')" @click="openInExplorer">
@@ -164,22 +178,45 @@ const showTree = computed(() => hasMultipleFiles.value && !treeCollapsed.value)
             <dd>{{ skill.meta.license }}</dd>
           </template>
           <dt>{{ t('skill.editors') }}</dt>
-          <dd>{{ skill.editors.join(", ") || "—" }}</dd>
+          <dd v-if="isCenterSkill" class="detail__editors">
+            <label
+              v-for="ed in installedEditors"
+              :key="ed.id"
+              class="detail__editor-check"
+            >
+              <input
+                type="checkbox"
+                :checked="skill.editors.includes(ed.id)"
+                :disabled="toggling"
+                @change="emit('toggleEditor', ed.id)"
+              />
+              <span>{{ ed.display_name }}</span>
+            </label>
+          </dd>
+          <dd v-else>{{ skill.editors.join(", ") || "—" }}</dd>
           <dt>{{ t('skill.path') }}</dt>
           <dd class="detail__path">{{ skill.source_path }}</dd>
+          <template v-if="skill.is_debug && skill.debug_source_path">
+            <dt>{{ t('skill.actualPath') }}</dt>
+            <dd class="detail__path">{{ skill.debug_source_path }}</dd>
+          </template>
         </dl>
       </div>
 
       <ConfirmDialog
         :visible="showUninstallConfirm"
         :title="t('skill.confirmUninstall')"
-        :message="t('skill.uninstallMessage', { name: skill.meta.name })"
+        :message="uninstallMessage"
         :confirm-text="t('skill.uninstall')"
         :cancel-text="t('skill.cancel')"
         danger
         @confirm="confirmUninstall"
         @cancel="showUninstallConfirm = false"
       />
+
+      <div v-if="skill.is_debug && skill.debug_status === 'abnormal'" class="detail__warning detail__warning--abnormal">
+        {{ t('debug.abnormalWarning') }}
+      </div>
 
       <div v-if="isSymlink && isEditing" class="detail__warning">
         {{ t('skill.symlinkWarning') }}
@@ -198,7 +235,7 @@ const showTree = computed(() => hasMultipleFiles.value && !treeCollapsed.value)
           <div class="detail__divider-line" />
           <button
             class="detail__collapse-btn"
-            :title="treeCollapsed ? '展开文件树' : '折叠文件树'"
+            :title="treeCollapsed ? t('skill.expandTree') : t('skill.collapseTree')"
             @click="treeCollapsed = !treeCollapsed"
           >
             <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
@@ -363,6 +400,11 @@ const showTree = computed(() => hasMultipleFiles.value && !treeCollapsed.value)
   flex-shrink: 0;
 }
 
+.detail__warning--abnormal {
+  background: rgba(229, 62, 62, 0.1);
+  color: #c53030;
+}
+
 .detail__body {
   flex: 1;
   display: flex;
@@ -386,7 +428,6 @@ const showTree = computed(() => hasMultipleFiles.value && !treeCollapsed.value)
   align-items: center;
   flex-shrink: 0;
   width: 22px;
-  padding: 0 0;
 }
 
 .detail__divider-line {
@@ -438,5 +479,23 @@ const showTree = computed(() => hasMultipleFiles.value && !treeCollapsed.value)
   overflow: hidden;
   text-overflow: ellipsis;
   flex-shrink: 0;
+}
+
+.detail__editors {
+  display: flex;
+  gap: 0.75rem;
+  margin: 0;
+}
+
+.detail__editor-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.detail__editor-check input {
+  accent-color: var(--neu-accent);
 }
 </style>

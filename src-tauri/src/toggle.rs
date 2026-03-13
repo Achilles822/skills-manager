@@ -4,7 +4,7 @@ use std::path::Path;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
-fn remove_dir_or_symlink(path: &Path) -> std::io::Result<()> {
+pub fn remove_dir_or_symlink(path: &Path) -> std::io::Result<()> {
     let meta = std::fs::symlink_metadata(path)?;
 
     #[cfg(target_os = "windows")]

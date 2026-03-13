@@ -2,6 +2,7 @@
 import { ref, watch } from "vue"
 import { useI18n } from "vue-i18n"
 import { saveLocale } from "@/i18n"
+import { version } from "../../package.json"
 
 const { t, locale } = useI18n()
 
@@ -61,7 +62,7 @@ const languages = [
             <img src="@/assets/app-icon.png" alt="Skills Manager" width="48" height="48" class="settings-dialog__icon" />
             <div class="settings-dialog__brand-text">
               <h2 class="settings-dialog__title">Skills Manager</h2>
-              <span class="settings-dialog__version">v0.1.1</span>
+              <span class="settings-dialog__version">v{{ version }}</span>
             </div>
           </div>
 

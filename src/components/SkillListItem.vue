@@ -1,27 +1,43 @@
 <script setup lang="ts">
+import { computed } from "vue"
+import { useI18n } from "vue-i18n"
 import NeuCard from "@/components/NeuCard.vue"
-import NeuToggle from "@/components/NeuToggle.vue"
-import type { Skill } from "@/types"
+import type { Skill, EditorInfo } from "@/types"
 
-defineProps<{
+const { t } = useI18n()
+
+const props = defineProps<{
   skill: Skill
   selected: boolean
   toggling: boolean
+  installedEditors: EditorInfo[]
 }>()
 
 const emit = defineEmits<{
   select: []
-  toggle: []
+  toggleEditor: [editorId: string]
 }>()
+
+const isCenterSkill = computed(() => props.skill.id.startsWith("center:"))
 
 function truncate(str: string | null | undefined, len: number) {
   if (!str) return ""
   return str.length > len ? str.slice(0, len) + "…" : str
 }
 
-const editorDisplayNames: Record<string, string> = {
-  cursor: "Cursor",
-  "claude-code": "Claude Code",
+function editorLabel(ed: EditorInfo) {
+  const short: Record<string, string> = { cursor: "C", "claude-code": "CC" }
+  return short[ed.id] || ed.display_name.charAt(0)
+}
+
+function isEditorLinked(editorId: string) {
+  return props.skill.editors.includes(editorId)
+}
+
+function handleEditorToggle(e: MouseEvent, editorId: string) {
+  e.stopPropagation()
+  if (props.toggling) return
+  emit("toggleEditor", editorId)
 }
 </script>
 
@@ -30,21 +46,30 @@ const editorDisplayNames: Record<string, string> = {
     <div class="skill-item">
       <div class="skill-item__header">
         <h3 class="skill-item__name">{{ skill.meta.name }}</h3>
-        <NeuToggle
-          :model-value="skill.enabled"
-          :loading="toggling"
-          @update:model-value="emit('toggle')"
-        />
+        <div v-if="isCenterSkill" class="skill-item__editor-toggles">
+          <button
+            v-for="ed in installedEditors"
+            :key="ed.id"
+            class="skill-item__editor-btn"
+            :class="{ 'skill-item__editor-btn--on': isEditorLinked(ed.id) }"
+            :title="ed.display_name"
+            :disabled="toggling"
+            @click="handleEditorToggle($event, ed.id)"
+          >{{ editorLabel(ed) }}</button>
+        </div>
       </div>
       <p v-if="skill.meta.description" class="skill-item__desc">
         {{ truncate(skill.meta.description, 80) }}
       </p>
       <div class="skill-item__tags">
         <span
-          v-for="ed in skill.editors"
-          :key="ed"
-          class="skill-item__tag skill-item__tag--editor"
-        >{{ editorDisplayNames[ed] || ed }}</span>
+          v-if="skill.is_debug"
+          class="skill-item__tag skill-item__tag--debug"
+        >{{ t('debug.localDebug') }}</span>
+        <span
+          v-if="skill.is_debug && skill.debug_status === 'abnormal'"
+          class="skill-item__tag skill-item__tag--abnormal"
+        >{{ t('debug.abnormal') }}</span>
         <span
           v-if="skill.meta.version"
           class="skill-item__tag skill-item__tag--version"
@@ -80,6 +105,47 @@ const editorDisplayNames: Record<string, string> = {
   text-overflow: ellipsis;
 }
 
+.skill-item__editor-toggles {
+  display: flex;
+  gap: 0.3rem;
+  flex-shrink: 0;
+}
+
+.skill-item__editor-btn {
+  width: 24px;
+  height: 20px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.6rem;
+  font-weight: 700;
+  font-family: inherit;
+  border: none;
+  border-radius: 5px;
+  cursor: pointer;
+  background: var(--neu-bg);
+  color: var(--neu-text-muted);
+  box-shadow: var(--neu-shadow-in-sm);
+  transition: all 200ms ease;
+  padding: 0;
+  line-height: 1;
+}
+
+.skill-item__editor-btn--on {
+  background: var(--neu-accent);
+  color: #fff;
+  box-shadow: 0 1px 3px rgba(232, 115, 74, 0.3);
+}
+
+.skill-item__editor-btn:hover:not(:disabled) {
+  opacity: 0.85;
+}
+
+.skill-item__editor-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
 .skill-item__desc {
   margin: 0;
   font-size: 0.78rem;
@@ -105,13 +171,18 @@ const editorDisplayNames: Record<string, string> = {
   line-height: 1.5;
 }
 
-.skill-item__tag--editor {
-  background: rgba(108, 142, 191, 0.14);
-  color: #4a6fa5;
-}
-
 .skill-item__tag--version {
   background: rgba(72, 187, 120, 0.14);
   color: #2f855a;
+}
+
+.skill-item__tag--debug {
+  background: rgba(124, 58, 237, 0.12);
+  color: #6d28d9;
+}
+
+.skill-item__tag--abnormal {
+  background: rgba(245, 158, 11, 0.14);
+  color: #b45309;
 }
 </style>

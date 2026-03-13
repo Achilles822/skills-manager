@@ -1,11 +1,12 @@
+use crate::debug_store::DebugSkillsStore;
 use crate::editor::{EditorInfo, EditorRegistry};
-use crate::skill::{parse_skill_md, scan_skills, Skill, SkillDetail};
+use crate::skill::{parse_skill_md, scan_skills, strip_verbatim_prefix, Skill, SkillDetail};
 use crate::toggle::{
     disable_skill_center, disable_skill_copy, enable_skill_center, enable_skill_copy,
-    uninstall_skill_center, uninstall_skill_copy, SkillLockManager,
+    remove_dir_or_symlink, uninstall_skill_center, uninstall_skill_copy, SkillLockManager,
 };
 use crate::platform::home_dir;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tauri::State;
@@ -13,13 +14,15 @@ use tauri::State;
 pub struct AppState {
     pub registry: Arc<EditorRegistry>,
     pub lock_manager: Arc<SkillLockManager>,
+    pub app_data_dir: PathBuf,
 }
 
 impl AppState {
-    pub fn new(registry: EditorRegistry, lock_manager: SkillLockManager) -> Self {
+    pub fn new(registry: EditorRegistry, lock_manager: SkillLockManager, app_data_dir: PathBuf) -> Self {
         Self {
             registry: Arc::new(registry),
             lock_manager: Arc::new(lock_manager),
+            app_data_dir,
         }
     }
 }
@@ -34,7 +37,7 @@ pub async fn list_skills(
     state: State<'_, AppState>,
     editors: Option<Vec<String>>,
 ) -> Result<Vec<Skill>, String> {
-    let skills = scan_skills(&state.registry);
+    let skills = scan_skills(&state.registry, &state.app_data_dir);
     Ok(match editors {
         Some(ids) => skills
             .into_iter()
@@ -56,8 +59,7 @@ pub async fn list_skills(
 pub async fn get_skill_detail(skill_path: String) -> Result<SkillDetail, String> {
     let path = PathBuf::from(&skill_path);
     let (meta, body) = parse_skill_md(&path)?;
-    let raw_content =
-        std::fs::read_to_string(&path).map_err(|e| format!("Failed to read skill file: {}", e))?;
+    let raw_content = crate::skill::read_file_lossy(&path)?;
     Ok(SkillDetail {
         meta,
         body,
@@ -158,7 +160,7 @@ pub async fn save_skill_content(skill_path: String, content: String) -> Result<(
 
 #[tauri::command]
 pub async fn open_in_explorer(path: String) -> Result<(), String> {
-    let path_buf = PathBuf::from(&path);
+    let path_buf = strip_verbatim_prefix(&PathBuf::from(&path));
 
     #[cfg(target_os = "windows")]
     {
@@ -239,7 +241,7 @@ fn scan_dir_recursive(dir: &Path) -> Vec<FileEntry> {
 
         entries.push(FileEntry {
             name,
-            path: path.to_string_lossy().to_string(),
+            path: strip_verbatim_prefix(&path).to_string_lossy().to_string(),
             is_dir,
             children,
         });
@@ -303,4 +305,260 @@ pub async fn save_file_content(file_path: String, content: String) -> Result<(),
     })?;
 
     Ok(())
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct ExternalSkillInfo {
+    pub dir_name: String,
+    pub name: String,
+    pub description: Option<String>,
+    pub has_conflict: bool,
+}
+
+#[tauri::command]
+pub async fn scan_external_folder(folder_path: String) -> Result<Vec<ExternalSkillInfo>, String> {
+    let folder = strip_verbatim_prefix(&PathBuf::from(&folder_path));
+    if !folder.exists() || !folder.is_dir() {
+        return Err("Folder does not exist".to_string());
+    }
+
+    let home = home_dir().ok_or("Could not determine home directory")?;
+    let center_skills_dir = home.join(".agents").join("skills");
+
+    let mut results = Vec::new();
+    let entries = std::fs::read_dir(&folder)
+        .map_err(|e| format!("Failed to read folder: {}", e))?;
+
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            let skill_md = path.join("SKILL.md");
+            if skill_md.exists() {
+                let dir_name = path.file_name()
+                    .and_then(|n| n.to_str())
+                    .unwrap_or("unknown")
+                    .to_string();
+
+                let (name, description) = match parse_skill_md(&skill_md) {
+                    Ok((meta, _)) => (meta.name, meta.description),
+                    Err(_) => (dir_name.clone(), None),
+                };
+
+                let has_conflict = center_skills_dir.join(&dir_name).exists()
+                    || std::fs::symlink_metadata(&center_skills_dir.join(&dir_name)).is_ok();
+
+                results.push(ExternalSkillInfo {
+                    dir_name,
+                    name,
+                    description,
+                    has_conflict,
+                });
+            }
+        }
+    }
+
+    results.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+    Ok(results)
+}
+
+#[derive(Debug, Deserialize)]
+pub struct LinkRequest {
+    pub dir_name: String,
+    pub overwrite: bool,
+}
+
+fn create_symlink_dir(source: &Path, target: &Path) -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    {
+        std::os::windows::fs::symlink_dir(source, target)
+            .map_err(|e| format!("Failed to create symlink: {}", e))?;
+    }
+
+    #[cfg(unix)]
+    {
+        std::os::unix::fs::symlink(source, target)
+            .map_err(|e| format!("Failed to create symlink: {}", e))?;
+    }
+
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn link_debug_skills(
+    state: State<'_, AppState>,
+    folder_path: String,
+    skills: Vec<LinkRequest>,
+    editor_ids: Vec<String>,
+) -> Result<(), String> {
+    let home = home_dir().ok_or("Could not determine home directory")?;
+    let center_skills_dir = home.join(".agents").join("skills");
+    let folder_raw = PathBuf::from(&folder_path);
+    let folder = strip_verbatim_prefix(&folder_raw);
+    let folder_path_clean = folder.to_string_lossy().to_string();
+
+    if !center_skills_dir.exists() {
+        std::fs::create_dir_all(&center_skills_dir)
+            .map_err(|e| format!("Failed to create center skills dir: {}", e))?;
+    }
+
+    let mut linked_names = Vec::new();
+
+    for req in &skills {
+        let source = folder.join(&req.dir_name);
+        let target = center_skills_dir.join(&req.dir_name);
+
+        // #region agent log
+        crate::debug_log::debug_log("commands.rs:link_debug_skills", "processing skill", serde_json::json!({"dir_name": &req.dir_name, "overwrite": req.overwrite, "source": source.to_string_lossy(), "target": target.to_string_lossy(), "target_exists": target.exists(), "target_meta_ok": std::fs::symlink_metadata(&target).is_ok(), "folder_path_clean": &folder_path_clean}), "A");
+        // #endregion
+
+        if target.exists() || std::fs::symlink_metadata(&target).is_ok() {
+            if req.overwrite {
+                for editor in state.registry.all() {
+                    let editor_skills = editor.skills_dir(&home);
+                    let old_link = editor_skills.join(&req.dir_name);
+                    let old_exists = old_link.exists() || std::fs::symlink_metadata(&old_link).is_ok();
+                    // #region agent log
+                    crate::debug_log::debug_log("commands.rs:link_debug_skills", "overwrite: removing editor link", serde_json::json!({"editor": editor.id(), "old_link": old_link.to_string_lossy(), "old_exists": old_exists}), "A");
+                    // #endregion
+                    if old_exists {
+                        let _ = remove_dir_or_symlink(&old_link);
+                    }
+                }
+                remove_dir_or_symlink(&target)
+                    .map_err(|e| format!("Failed to remove existing '{}': {}", req.dir_name, e))?;
+            } else {
+                continue;
+            }
+        }
+
+        create_symlink_dir(&source, &target)?;
+        linked_names.push(req.dir_name.clone());
+
+        for editor_id in &editor_ids {
+            if let Some(editor) = state.registry.get(editor_id) {
+                let editor_skills = editor.skills_dir(&home);
+                if !editor_skills.exists() {
+                    std::fs::create_dir_all(&editor_skills)
+                        .map_err(|e| format!("Failed to create editor skills dir: {}", e))?;
+                }
+                let link_path = editor_skills.join(&req.dir_name);
+                let editor_link_exists = link_path.exists() || std::fs::symlink_metadata(&link_path).is_ok();
+                // #region agent log
+                crate::debug_log::debug_log("commands.rs:link_debug_skills", "creating editor link", serde_json::json!({"editor_id": editor_id, "link_path": link_path.to_string_lossy(), "already_exists": editor_link_exists, "target": target.to_string_lossy()}), "A");
+                // #endregion
+                if editor_link_exists {
+                    continue;
+                }
+                create_symlink_dir(&target, &link_path)?;
+            }
+        }
+    }
+
+    if !linked_names.is_empty() {
+        let mut store = DebugSkillsStore::load(&state.app_data_dir);
+        store.add_linked_skills(&folder_path_clean, &linked_names);
+        store.save(&state.app_data_dir)?;
+    }
+
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn update_skill_editors(
+    state: State<'_, AppState>,
+    dir_name: String,
+    editor_ids: Vec<String>,
+) -> Result<(), String> {
+    let home = home_dir().ok_or("Could not determine home directory")?;
+    let center_skills_dir = home.join(".agents").join("skills");
+    let center_path = center_skills_dir.join(&dir_name);
+
+    let center_exists = center_path.exists();
+    let center_meta_ok = std::fs::symlink_metadata(&center_path).is_ok();
+    // #region agent log
+    crate::debug_log::debug_log("commands.rs:update_skill_editors", "entry", serde_json::json!({"dir_name": &dir_name, "editor_ids": &editor_ids, "center_path": center_path.to_string_lossy(), "center_exists": center_exists, "center_meta_ok": center_meta_ok}), "E");
+    // #endregion
+    if !center_exists && !center_meta_ok {
+        return Err(format!("Skill '{}' not found in center skills", dir_name));
+    }
+
+    for editor in state.registry.all() {
+        let editor_skills = editor.skills_dir(&home);
+        let link_path = editor_skills.join(&dir_name);
+        let should_have = editor_ids.contains(&editor.id().to_string());
+        let link_meta_ok = std::fs::symlink_metadata(&link_path).is_ok();
+        let exists = link_path.exists() || link_meta_ok;
+
+        // #region agent log
+        crate::debug_log::debug_log("commands.rs:update_skill_editors", "editor", serde_json::json!({"editor": editor.id(), "link_path": link_path.to_string_lossy(), "should_have": should_have, "exists": exists, "link_meta_ok": link_meta_ok, "link_exists": link_path.exists()}), "E");
+        // #endregion
+
+        if should_have && !exists {
+            if !editor_skills.exists() {
+                std::fs::create_dir_all(&editor_skills)
+                    .map_err(|e| format!("Failed to create editor skills dir: {}", e))?;
+            }
+            create_symlink_dir(&center_path, &link_path)?;
+        } else if should_have && link_meta_ok && !link_path.exists() {
+            remove_dir_or_symlink(&link_path)
+                .map_err(|e| format!("Failed to remove stale link: {}", e))?;
+            if !editor_skills.exists() {
+                std::fs::create_dir_all(&editor_skills)
+                    .map_err(|e| format!("Failed to create editor skills dir: {}", e))?;
+            }
+            create_symlink_dir(&center_path, &link_path)?;
+        } else if !should_have && exists {
+            remove_dir_or_symlink(&link_path)
+                .map_err(|e| format!("Failed to remove from editor '{}': {}", editor.id(), e))?;
+        }
+    }
+
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn uninstall_debug_skill(
+    state: State<'_, AppState>,
+    dir_name: String,
+    debug_status: String,
+) -> Result<(), String> {
+    if debug_status == "normal" {
+        let home = home_dir().ok_or("Could not determine home directory")?;
+        let center_skills_dir = home.join(".agents").join("skills");
+        let skill_path = center_skills_dir.join(&dir_name);
+
+        for editor in state.registry.all() {
+            let editor_skills = editor.skills_dir(&home);
+            let link_path = editor_skills.join(&dir_name);
+            if link_path.exists() || std::fs::symlink_metadata(&link_path).is_ok() {
+                remove_dir_or_symlink(&link_path)
+                    .map_err(|e| format!("Failed to remove from editor '{}': {}", editor.id(), e))?;
+            }
+        }
+
+        if std::fs::symlink_metadata(&skill_path).is_ok() {
+            remove_dir_or_symlink(&skill_path)
+                .map_err(|e| format!("Failed to remove symlink: {}", e))?;
+        }
+
+        let disabled_dir = home.join(".agents").join(".disabled-skills");
+        let disabled_path = disabled_dir.join(&dir_name);
+        if std::fs::symlink_metadata(&disabled_path).is_ok() {
+            remove_dir_or_symlink(&disabled_path)
+                .map_err(|e| format!("Failed to remove disabled symlink: {}", e))?;
+        }
+    }
+
+    let mut store = DebugSkillsStore::load(&state.app_data_dir);
+    store.remove_skill(&dir_name);
+    store.save(&state.app_data_dir)?;
+
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn get_debug_store(
+    state: State<'_, AppState>,
+) -> Result<DebugSkillsStore, String> {
+    Ok(DebugSkillsStore::load(&state.app_data_dir))
 }

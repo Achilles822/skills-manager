@@ -2,7 +2,7 @@
 import { computed } from "vue"
 import { useI18n } from "vue-i18n"
 import SkillListItem from "@/components/SkillListItem.vue"
-import type { Skill } from "@/types"
+import type { Skill, EditorInfo } from "@/types"
 
 const { t } = useI18n()
 
@@ -11,11 +11,12 @@ const props = defineProps<{
   selectedSkill: Skill | null
   loading: boolean
   togglingSkillIds: Set<string>
+  installedEditors: EditorInfo[]
 }>()
 
 const emit = defineEmits<{
   select: [skill: Skill]
-  toggle: [skill: Skill]
+  toggleEditor: [skill: Skill, editorId: string]
 }>()
 
 const isEmpty = computed(() => !props.loading && props.skills.length === 0)
@@ -37,8 +38,9 @@ const isEmpty = computed(() => !props.loading && props.skills.length === 0)
         :skill="skill"
         :selected="selectedSkill?.id === skill.id"
         :toggling="togglingSkillIds.has(skill.id)"
+        :installed-editors="installedEditors"
         @select="emit('select', skill)"
-        @toggle="emit('toggle', skill)"
+        @toggle-editor="(editorId) => emit('toggleEditor', skill, editorId)"
       />
     </div>
   </div>
@@ -82,7 +84,6 @@ const isEmpty = computed(() => !props.loading && props.skills.length === 0)
   display: flex;
   flex-direction: column;
   gap: 0.625rem;
-  /* 左右各留 8px 让卡片阴影不被裁切，右侧多留给滚动条 */
   padding: 4px 10px 8px 8px;
 }
 </style>

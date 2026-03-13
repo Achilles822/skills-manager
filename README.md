@@ -23,11 +23,14 @@
 
 - 🔍 **Multi-editor support** — Auto-detect and manage skills for Cursor and Claude Code.
 - 📦 **Centralized skill center** — One copy in `~/.agents/skills/`, symlinked to all editors.
+- 🔗 **Per-editor linking** — Toggle each skill's association with individual editors via compact buttons on skill cards and checkboxes in the detail view.
 - 🔀 **One-click toggle** — Enable / disable skills instantly, restore anytime.
+- 🐛 **Local debug import** — Import skills from any external folder (e.g. a project under development), symlink them to the center and selected editors. Changes to source files take effect immediately — no re-import needed.
 - 📝 **Detail & edit** — View Markdown-rendered docs and edit skill content in-place.
 - 📂 **File explorer** — Browse skill directories with a collapsible tree, view and edit scripts/references/templates with syntax highlighting.
+- 🔎 **Search & filter** — Quick search by skill name; collapsible filter panel for editor and status filtering.
 - 🌐 **Multi-language** — Switch between Simplified Chinese and English from the settings panel.
-- 🗑️ **Uninstall** — Remove skills with automatic cross-editor cleanup.
+- 🗑️ **Uninstall** — Remove skills with automatic cross-editor cleanup. Debug skills only remove symlinks, never source files.
 - 🎨 **Neumorphic UI** — Soft, modern design built with custom Vue components.
 - 💻 **Cross-platform** — Native on macOS, Windows, and Linux via Tauri v2.
 
@@ -100,6 +103,7 @@ skills-manager/
 │       ├── editor.rs       # Editor detection & registry
 │       ├── skill.rs        # Skill discovery & SKILL.md parsing
 │       ├── toggle.rs       # Enable/disable/uninstall logic
+│       ├── debug_store.rs  # Debug skill persistence
 │       └── platform.rs     # Platform-specific utilities
 ├── scripts/                # Icon generation scripts
 └── package.json

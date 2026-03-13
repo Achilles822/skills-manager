@@ -70,7 +70,9 @@ mod path_serde {
     where
         S: Serializer,
     {
-        serializer.serialize_str(&path.to_string_lossy())
+        let s = path.to_string_lossy();
+        let clean = s.strip_prefix(r"\\?\").unwrap_or(&s);
+        serializer.serialize_str(clean)
     }
 }
 
